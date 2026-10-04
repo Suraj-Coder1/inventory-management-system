@@ -255,13 +255,45 @@ pipeline {
                     . "$APPLICATION_CONFIG"
                     set +a
 
-                    for var in APP_NAME APP_SLUG K8S_NAMESPACE APP_PORT HEALTH_PATH K8S_MANIFESTS DOCKERFILES DOCKER_IMAGES
-                    do
-                        if [ -z "${!var:-}" ]; then
-                            echo "ERROR: Missing contract variable: $var"
-                            exit 1
-                        fi
-                    done
+                    if [ -z "${APP_NAME:-}" ]; then
+                        echo "ERROR: Missing contract variable: APP_NAME"
+                        exit 1
+                    fi
+
+                    if [ -z "${APP_SLUG:-}" ]; then
+                        echo "ERROR: Missing contract variable: APP_SLUG"
+                        exit 1
+                    fi
+
+                    if [ -z "${K8S_NAMESPACE:-}" ]; then
+                        echo "ERROR: Missing contract variable: K8S_NAMESPACE"
+                        exit 1
+                    fi
+
+                    if [ -z "${APP_PORT:-}" ]; then
+                        echo "ERROR: Missing contract variable: APP_PORT"
+                        exit 1
+                    fi
+
+                    if [ -z "${HEALTH_PATH:-}" ]; then
+                        echo "ERROR: Missing contract variable: HEALTH_PATH"
+                        exit 1
+                    fi
+
+                    if [ -z "${K8S_MANIFESTS:-}" ]; then
+                        echo "ERROR: Missing contract variable: K8S_MANIFESTS"
+                        exit 1
+                    fi
+
+                    if [ -z "${DOCKERFILES:-}" ]; then
+                        echo "ERROR: Missing contract variable: DOCKERFILES"
+                        exit 1
+                    fi
+
+                    if [ -z "${DOCKER_IMAGES:-}" ]; then
+                        echo "ERROR: Missing contract variable: DOCKER_IMAGES"
+                        exit 1
+                    fi
 
                     echo "Contract loaded successfully."
                     echo "Application: $APP_NAME"
