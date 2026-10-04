@@ -79,6 +79,10 @@ pipeline {
                 sh '''
                     set -e
 
+                    set -a
+                    . "$APPLICATION_CONFIG"
+                    set +a
+
                     if [ -f package.json ]; then
                         npm ci
                         npm test --if-present
@@ -118,6 +122,10 @@ pipeline {
                 sh '''
                     set -e
 
+                    set -a
+                    . "$APPLICATION_CONFIG"
+                    set +a
+
                     for dir in . client frontend server backend
                     do
                         if [ -f "$dir/package.json" ]; then
@@ -135,6 +143,10 @@ pipeline {
             steps {
                 sh '''
                     set -e
+
+                    set -a
+                    . "$APPLICATION_CONFIG"
+                    set +a
 
                     for file in $DOCKERFILES
                     do
@@ -155,6 +167,10 @@ pipeline {
             steps {
                 sh '''
                     set -e
+
+                    set -a
+                    . "$APPLICATION_CONFIG"
+                    set +a
 
                     kubectl get nodes
 
