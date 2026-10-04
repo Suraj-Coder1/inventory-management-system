@@ -200,7 +200,6 @@ pipeline {
         }
     }
 }
-EOFcat > Jenkinsfile.reusable <<'EOF'
 pipeline {
     agent any
 
