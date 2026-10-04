@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     parameters {
-        string(name: 'APPLICATION_REPO', defaultValue: '', description: 'Application Git repository')
+        string(name: 'APPLICATION_REPO', defaultValue: 'https://github.com/Suraj-Coder1/inventory-management-system.git', description: 'Application Git repository')
         string(name: 'APPLICATION_BRANCH', defaultValue: 'main', description: 'Git branch')
         string(name: 'APPLICATION_CONFIG', defaultValue: 'deploy-config/inventory.env.example', description: 'Application contract')
         booleanParam(name: 'RUN_TESTS', defaultValue: true, description: 'Run automated tests')
