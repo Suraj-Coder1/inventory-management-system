@@ -56,7 +56,8 @@ pipeline {
 
                     for var in APP_NAME APP_SLUG K8S_NAMESPACE APP_PORT HEALTH_PATH K8S_MANIFESTS DOCKERFILES DOCKER_IMAGES
                     do
-                        if [ -z "${!var:-}" ]; then
+                        eval "value=\${$var-}"
+                        if [ -z "$value" ]; then
                             echo "ERROR: Missing contract variable: $var"
                             exit 1
                         fi
