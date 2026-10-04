@@ -54,24 +54,26 @@ pipeline {
                     . "$APPLICATION_CONFIG"
                     set +a
 
-                    for var in APP_NAME APP_SLUG K8S_NAMESPACE APP_PORT HEALTH_PATH K8S_MANIFESTS DOCKERFILES DOCKER_IMAGES
-                    do
-                        eval "value=\${$var-}"
-                        if [ -z "$value" ]; then
-                            echo "ERROR: Missing contract variable: $var"
-                            exit 1
-                        fi
-                    done
+                    test -n "${APP_NAME:-}" || { echo "ERROR: Missing contract variable: APP_NAME"; exit 1; }
+                    test -n "${APP_SLUG:-}" || { echo "ERROR: Missing contract variable: APP_SLUG"; exit 1; }
+                    test -n "${K8S_NAMESPACE:-}" || { echo "ERROR: Missing contract variable: K8S_NAMESPACE"; exit 1; }
+                    test -n "${APP_PORT:-}" || { echo "ERROR: Missing contract variable: APP_PORT"; exit 1; }
+                    test -n "${HEALTH_PATH:-}" || { echo "ERROR: Missing contract variable: HEALTH_PATH"; exit 1; }
+                    test -n "${K8S_MANIFESTS:-}" || { echo "ERROR: Missing contract variable: K8S_MANIFESTS"; exit 1; }
+                    test -n "${DOCKERFILES:-}" || { echo "ERROR: Missing contract variable: DOCKERFILES"; exit 1; }
+                    test -n "${DOCKER_IMAGES:-}" || { echo "ERROR: Missing contract variable: DOCKER_IMAGES"; exit 1; }
 
                     echo "Contract loaded successfully."
                     echo "Application: $APP_NAME"
                     echo "Namespace: $K8S_NAMESPACE"
                     echo "Port: $APP_PORT"
                     echo "Health: $HEALTH_PATH"
+                    echo "Kubernetes manifests: $K8S_MANIFESTS"
+                    echo "Dockerfiles: $DOCKERFILES"
+                    echo "Docker images: $DOCKER_IMAGES"
                 '''
             }
         }
-
         stage('Automated Tests') {
             when {
                 expression { params.RUN_TESTS }
