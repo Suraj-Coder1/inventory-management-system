@@ -84,25 +84,23 @@ pipeline {
             steps {
                 sh '''
                     set -eu
+                    set -a
+                    . "$APPLICATION_CONFIG"
+                    set +a
 
-                    test -f "$APPLICATION_CONFIG" || {
-                        echo "ERROR: Application config not found."
-                        exit 1
-                    }
+                    if [ -n "${FRONTEND_DIR:-}" ]; then
+                        test -f "$FRONTEND_DIR/package.json"
+                        echo "Testing frontend in $FRONTEND_DIR"
+                        (cd "$FRONTEND_DIR" && sh -eu -c "$FRONTEND_TEST_COMMAND")
+                    fi
 
-                    test -f client/package.json
-                    cd client
-                    npm ci
-                    npm run lint
-                    npm run build
-                    cd ..
+                    if [ -n "${BACKEND_DIR:-}" ]; then
+                        test -f "$BACKEND_DIR/package.json"
+                        echo "Testing backend in $BACKEND_DIR"
+                        (cd "$BACKEND_DIR" && sh -eu -c "$BACKEND_TEST_COMMAND")
+                    fi
 
-                    test -f server/package.json
-                    cd server
-                    npm ci
-                    node --check src/index.js
-
-                    echo "Frontend lint/build and backend syntax checks passed."
+                    echo "Configured application tests completed."
                 '''
             }
         }
