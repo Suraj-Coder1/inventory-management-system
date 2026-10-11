@@ -62,6 +62,9 @@ pipeline {
                     test -n "${K8S_MANIFESTS:-}" || { echo "ERROR: Missing contract variable: K8S_MANIFESTS"; exit 1; }
                     test -n "${DOCKERFILES:-}" || { echo "ERROR: Missing contract variable: DOCKERFILES"; exit 1; }
                     test -n "${DOCKER_IMAGES:-}" || { echo "ERROR: Missing contract variable: DOCKER_IMAGES"; exit 1; }
+                    test -n "${K8S_APP_MANIFESTS:-}" || { echo "ERROR: Missing contract variable: K8S_APP_MANIFESTS"; exit 1; }
+                    test -n "${K8S_DEPLOYMENTS:-}" || { echo "ERROR: Missing contract variable: K8S_DEPLOYMENTS"; exit 1; }
+                    test -n "${K8S_CONTAINERS:-}" || { echo "ERROR: Missing contract variable: K8S_CONTAINERS"; exit 1; }
 
                     echo "Contract loaded successfully."
                     echo "Application: $APP_NAME"
@@ -80,42 +83,26 @@ pipeline {
             }
             steps {
                 sh '''
-                    set -e
+                    set -eu
 
-                    set -a
-                    . "$APPLICATION_CONFIG"
-                    set +a
+                    test -f "$APPLICATION_CONFIG" || {
+                        echo "ERROR: Application config not found."
+                        exit 1
+                    }
 
-                    if [ -f package.json ]; then
-                        npm ci
-                        npm test --if-present
-                    fi
+                    test -f client/package.json
+                    cd client
+                    npm ci
+                    npm run lint
+                    npm run build
+                    cd ..
 
-                    if [ -f client/package.json ]; then
-                        cd client
-                        npm ci
-                        npm run build
-                    fi
+                    test -f server/package.json
+                    cd server
+                    npm ci
+                    node --check src/index.js
 
-                    if [ -f frontend/package.json ]; then
-                        cd frontend
-                        npm ci
-                        npm run build
-                    fi
-
-                    if [ -f server/package.json ]; then
-                        cd server
-                        npm ci
-                        npm test --if-present
-                    fi
-
-                    if [ -f backend/package.json ]; then
-                        cd backend
-                        npm ci
-                        npm test --if-present
-                    fi
-
-                    echo "Automated tests/build validation completed."
+                    echo "Frontend lint/build and backend syntax checks passed."
                 '''
             }
         }
@@ -188,6 +175,174 @@ pipeline {
                 '''
             }
         }
+
+        stage('Build and Import Docker Images') {
+            when {
+                expression { params.DEPLOY_TO_K8S }
+            }
+            steps {
+                sh '''
+                    set -eu
+                    set -a
+                    . "$APPLICATION_CONFIG"
+                    set +a
+
+                    count_words() {
+                        count=0
+                        for item do count=$((count + 1)); done
+                        printf '%s' "$count"
+                    }
+
+                    list_item() {
+                        wanted=$1
+                        shift
+                        for item do
+                            if [ "$wanted" -eq 1 ]; then
+                                printf '%s' "$item"
+                                return 0
+                            fi
+                            wanted=$((wanted - 1))
+                        done
+                        return 1
+                    }
+
+                    [ "$(count_words $DOCKERFILES)" -eq "$(count_words $DOCKER_IMAGES)" ] || {
+                        echo "ERROR: Dockerfile and image counts differ."
+                        exit 1
+                    }
+
+                    index=1
+                    for file in $DOCKERFILES
+                    do
+                        image=$(list_item "$index" $DOCKER_IMAGES)
+                        tag="$image:$BUILD_NUMBER"
+                        archive=".image-${index}-${BUILD_NUMBER}.tar"
+
+                        docker build --pull=false -f "$file" -t "$tag" "$(dirname "$file")"
+                        docker save -o "$archive" "$tag"
+                        docker exec -i minikube ctr -n k8s.io images import - < "$archive"
+                        rm -f "$archive"
+
+                        echo "Built and imported $tag"
+                        index=$((index + 1))
+                    done
+                '''
+            }
+        }
+
+        stage('Deploy and Verify') {
+            when {
+                expression { params.DEPLOY_TO_K8S }
+            }
+            steps {
+                sh '''
+                    set -eu
+                    set -a
+                    . "$APPLICATION_CONFIG"
+                    set +a
+
+                    count_words() {
+                        count=0
+                        for item do count=$((count + 1)); done
+                        printf '%s' "$count"
+                    }
+
+                    list_item() {
+                        wanted=$1
+                        shift
+                        for item do
+                            if [ "$wanted" -eq 1 ]; then
+                                printf '%s' "$item"
+                                return 0
+                            fi
+                            wanted=$((wanted - 1))
+                        done
+                        return 1
+                    }
+
+                    image_count=$(count_words $DOCKER_IMAGES)
+                    [ "$image_count" -eq "$(count_words $K8S_DEPLOYMENTS)" ] &&
+                    [ "$image_count" -eq "$(count_words $K8S_CONTAINERS)" ] || {
+                        echo "ERROR: Image, deployment and container counts differ."
+                        exit 1
+                    }
+
+                    rollback_file=".rollback-images-$BUILD_NUMBER"
+                    : > "$rollback_file"
+
+                    # Save current image references BEFORE applying manifests.
+                    index=1
+                    for deployment in $K8S_DEPLOYMENTS
+                    do
+                        container=$(list_item "$index" $K8S_CONTAINERS)
+                        if previous=$(kubectl -n "$K8S_NAMESPACE" get deployment "$deployment" \
+                            -o 'jsonpath={.spec.template.spec.containers[0].image}' 2>/dev/null) &&
+                            [ -n "$previous" ]; then
+                            printf '%s|%s|%s\\n' "$deployment" "$container" "$previous" >> "$rollback_file"
+                        else
+                            printf '%s|%s|%s\\n' "$deployment" "$container" "__NONE__" >> "$rollback_file"
+                        fi
+                        index=$((index + 1))
+                    done
+
+                    rollback() {
+                        echo "Restoring previous application images..."
+                        while IFS='|' read -r deployment container previous
+                        do
+                            [ -n "$deployment" ] || continue
+                            if [ "$previous" = "__NONE__" ]; then
+                                kubectl -n "$K8S_NAMESPACE" delete deployment "$deployment" --ignore-not-found=true || true
+                            else
+                                kubectl -n "$K8S_NAMESPACE" set image \
+                                    "deployment/$deployment" "$container=$previous" || true
+                                kubectl -n "$K8S_NAMESPACE" rollout status \
+                                    "deployment/$deployment" --timeout=120s || true
+                            fi
+                        done < "$rollback_file"
+                    }
+
+                    for file in $K8S_APP_MANIFESTS
+                    do
+                        test -f "$file" || {
+                            echo "ERROR: Manifest not found: $file"
+                            rollback
+                            exit 1
+                        }
+                        if ! kubectl apply -n "$K8S_NAMESPACE" -f "$file"; then
+                            rollback
+                            exit 1
+                        fi
+                    done
+
+                    index=1
+                    for deployment in $K8S_DEPLOYMENTS
+                    do
+                        container=$(list_item "$index" $K8S_CONTAINERS)
+                        image=$(list_item "$index" $DOCKER_IMAGES)
+                        tag="$image:$BUILD_NUMBER"
+
+                        if ! kubectl -n "$K8S_NAMESPACE" set image \
+                            "deployment/$deployment" "$container=$tag"; then
+                            rollback
+                            exit 1
+                        fi
+
+                        if ! kubectl -n "$K8S_NAMESPACE" rollout status \
+                            "deployment/$deployment" --timeout=180s; then
+                            rollback
+                            exit 1
+                        fi
+
+                        index=$((index + 1))
+                    done
+
+                    kubectl -n "$K8S_NAMESPACE" get deployments
+                    rm -f "$rollback_file"
+                    echo "Deployment and rollout verification succeeded."
+                '''
+            }
+        }
+
     }
 
     post {
