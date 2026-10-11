@@ -46,7 +46,7 @@ export default function StockIn() {
       });
 
       loadProducts();
-    } catch (error) {
+    } catch {
       setMessage("Failed to add stock");
     }
   };
